@@ -14,7 +14,7 @@ class KeyTokenService {
     return await keyModel.findOne({ refreshToken });
   };
 
-  static deleteKeyById = async (userId) => {
+  static removeTokenByUserId = async (userId) => {
     return await keyModel.deleteOne({
       user: Types.ObjectId.createFromHexString(userId),
     });
@@ -27,8 +27,6 @@ class KeyTokenService {
   }
 
   static async findKeyStoreById(id) {
-    console.log(id);
-
     return await keyModel
       .findOne({
         user: Types.ObjectId.createFromHexString(id),
@@ -36,12 +34,10 @@ class KeyTokenService {
       .lean();
   }
 
-  static async createTokenKey({ userId, publicKey, privateKey, refreshToken }) {
+  static async createTokenKey({ userId, refreshToken }) {
     try {
       const filter = { user: userId },
         update = {
-          publicKey,
-          privateKey,
           refreshToken,
           refreshTokenUsed: [],
         },
@@ -52,7 +48,7 @@ class KeyTokenService {
 
       const tokens = await keyModel.findOneAndUpdate(filter, update, options);
 
-      return tokens ? tokens?.publicKey : null;
+      return tokens ? tokens?.refreshToken : null;
     } catch (error) {
       return error;
     }

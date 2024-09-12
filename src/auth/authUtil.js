@@ -3,24 +3,28 @@ const { asyncHandler } = require("../utils/asyncHandler");
 const { AuthFailureError, NotFoundError } = require("../core/error.response");
 const KeyTokenService = require("../services/key-token");
 
-async function createTokenPair({ payload, publicKey, privateKey }) {
+const signature = process.env.SIGNATURE;
+
+async function verifyJWT(token) {
   try {
-    const accessToken = await JWT.sign(payload, publicKey, {
+    return await JWT.verify(token, signature);
+  } catch (error) {
+    console.log("Error verify token:: ", error);
+
+    if (["JsonWebTokenError", "TokenExpiredError"].includes(error.name)) {
+      throw new AuthFailureError("Request unauthorization!");
+    }
+  }
+}
+
+async function createTokenPair({ payload }) {
+  try {
+    const accessToken = await JWT.sign(payload, signature, {
       expiresIn: "2 days",
     });
 
-    const refreshToken = await JWT.sign(payload, privateKey, {
+    const refreshToken = await JWT.sign(payload, signature, {
       expiresIn: "7 days",
-    });
-
-    JWT.decode(accessToken, publicKey, (err, decode) => {
-      console.log("rub >>>>");
-
-      if (err) {
-        console.error("Error verify: ", err);
-      } else {
-        console.log("Verify success: ", decode);
-      }
     });
 
     return { accessToken, refreshToken };
@@ -31,28 +35,25 @@ async function createTokenPair({ payload, publicKey, privateKey }) {
 
 const authentication = asyncHandler(async (req, res, next) => {
   const accessToken = req.headers["authorization"];
-  if (!accessToken || !accessToken.includes("Bearer")) {
+  if (!accessToken) {
     throw new AuthFailureError("Request unauthorization!");
   }
 
-  const parse = await JWT.decode(accessToken.split(" ")[1]);
-  const userId = parse.userId;
+  const checked = await verifyJWT(accessToken);
+
+  const userId = checked?.userId;
   if (!userId) {
     throw new AuthFailureError("Request unauthorization!");
   }
 
   const keyStore = await KeyTokenService.findKeyStoreById(userId);
   if (!keyStore) {
-    throw new NotFoundError("Cannot found key store!");
+    throw new AuthFailureError("Request unauthorization!");
   }
 
   req.keyStore = keyStore;
 
   return next();
 });
-
-const verifyJWT = async (token, keySerect) => {
-  return await JWT.verify(token, keySerect);
-};
 
 module.exports = { createTokenPair, authentication, verifyJWT };

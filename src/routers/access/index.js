@@ -7,11 +7,14 @@ const router = express.Router();
 
 router.post("/user/login", asyncHandler(accessController.login));
 router.post("/user/sign-up", asyncHandler(accessController.signUp));
+router.post("/user/refresh-token", asyncHandler(accessController.refreshToken));
+router.post(
+  "/user/send-email-reset-password",
+  asyncHandler(accessController.sendEmailResetPassword)
+);
 
 router.use(authentication);
 router.post("/user/logout", asyncHandler(accessController.logout));
-router.post("/user/refresh-token", asyncHandler(accessController.refreshToken));
-
 router.get(
   "/",
   asyncHandler((req, res, next) => {

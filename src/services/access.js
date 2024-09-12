@@ -1,14 +1,19 @@
 const userModel = require("./../models/user");
 const bcrypt = require("bcrypt");
-const crypto = require("node:crypto");
 const KeyTokenService = require("./key-token");
 const _ = require("lodash");
 const { createTokenPair, verifyJWT } = require("../auth/authUtil");
 const {
   BadRequestError,
   AuthFailureError,
+  ForbiddenError,
+  NotFoundError,
+  ConflictRequestError,
 } = require("./../core/error.response");
 const { findUserByEmail } = require("./user");
+const nodeMailer = require("../utils/node-mailer");
+const otpGenerator = require("otp-generator");
+const MailderService = require("./mailer");
 
 const ROLES = {
   USER: "USER",
@@ -17,25 +22,48 @@ const ROLES = {
 };
 
 class AccessService {
+  static async sendEmailResetPassword({ email }) {
+    if (!email || !email.includes("@")) {
+      throw new BadRequestError("Email not valid!");
+    }
+
+    const userHolder = await findUserByEmail({ email });
+    if (!userHolder) {
+      throw new NotFoundError("User not registed!");
+    }
+
+    const otp = otpGenerator.generate(6, {
+      upperCaseAlphabets: false,
+      lowerCaseAlphabets: false,
+      specialChars: false,
+    });
+
+    const sendEmail = await nodeMailer(email, otp);
+    if (!sendEmail) {
+      throw new ConflictRequestError("Some thing went wrong, try again!");
+    }
+
+    const saveOTP = await MailderService.createOTP({ email, otp });
+    if (!saveOTP.email) {
+      throw new ConflictRequestError("Some thing went wrong, try again!");
+    }
+
+    return {};
+  }
+
   static async refreshToken({ refreshToken }) {
+    const { userId, email } = await verifyJWT(refreshToken);
+
     const findToken = await KeyTokenService.findRefreshTokenUsed(refreshToken);
     if (findToken) {
-      const { userId } = await verifyJWT(refreshToken, findToken.privateKey);
-
-      await KeyTokenService.deleteKeyById(userId);
+      await KeyTokenService.removeTokenByUserId(userId);
       throw new ForbiddenError("Something went wrong, please re-login!");
     }
 
     const holderToken = await KeyTokenService.findRefreshToken(refreshToken);
-
     if (!holderToken) {
-      throw new AuthFailureError("User is not registered!");
+      throw new AuthFailureError("Request unauthorization!");
     }
-
-    const { email, userId } = await verifyJWT(
-      refreshToken,
-      holderToken.privateKey
-    );
 
     const findUser = await findUserByEmail({ email });
 
@@ -48,8 +76,6 @@ class AccessService {
         userId: findUser._id,
         email,
       },
-      publicKey: holderToken.publicKey,
-      privateKey: holderToken.privateKey,
     });
 
     await holderToken.updateOne({
@@ -84,22 +110,15 @@ class AccessService {
       throw new AuthFailureError("Wrong username or password");
     }
 
-    const publicKey = crypto.randomBytes(64).toString("hex");
-    const privateKey = crypto.randomBytes(64).toString("hex");
-
     const tokens = await createTokenPair({
       payload: {
         userId: userHolder._id,
         email: userHolder.email,
       },
-      publicKey: publicKey,
-      privateKey: privateKey,
     });
 
     await KeyTokenService.createTokenKey({
       userId: userHolder._id,
-      publicKey,
-      privateKey,
       refreshToken: tokens.refreshToken,
     });
 
@@ -132,23 +151,16 @@ class AccessService {
     });
 
     if (newUser) {
-      const publicKey = await crypto.randomBytes(64).toString("hex");
-      const privateKey = await crypto.randomBytes(64).toString("hex");
-
       const tokens = await createTokenPair({
         payload: {
           userId: newUser._id,
           email: newUser.email,
         },
-        publicKey,
-        privateKey,
       });
 
       const keyStore = await KeyTokenService.createTokenKey({
         userId: newUser._id,
         refreshToken: tokens.refreshToken,
-        publicKey,
-        privateKey,
       });
 
       if (!keyStore) {

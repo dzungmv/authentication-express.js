@@ -2,11 +2,20 @@ const { Created, SuccessResponse } = require("../core/success.response");
 const AccessService = require("./../services/access");
 
 class AccessController {
+  async sendEmailResetPassword(req, res, next) {
+    new SuccessResponse({
+      message: "Send email successfully!",
+      metadata: await AccessService.sendEmailResetPassword({
+        email: req.body.email,
+      }),
+    }).send(res);
+  }
+
   async refreshToken(req, res, next) {
     new SuccessResponse({
       message: "Refresh token successfully!",
       metadata: await AccessService.refreshToken({
-        refreshToken: req.keyStore.refreshToken,
+        refreshToken: req.body.refreshToken,
       }),
     }).send(res);
   }
@@ -26,8 +35,6 @@ class AccessController {
   }
 
   async signUp(req, res, next) {
-    console.log(req.body);
-
     const createUser = await AccessService.signUp(req.body);
     new Created({
       message: "Register successfully!",
